@@ -1,76 +1,67 @@
 const User = require('../models/user');
-const bcrypt = require('bcryptjs'); // ✅ Uses the package you installed
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// ------------------------------------------
-// 1. REGISTER USER
-// ------------------------------------------
-exports.register = async (req, res) => {
-  try {
-    // ✅ Uses 'username' to match your Database Model
-    const { username, email, password, role } = req.body;
+// DELETED: exports.register function is gone.
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+// 1. VERIFY OTP
+// (Kept so employees can verify their email after Admin adds them)
+exports.verifyEmail = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    const user = await User.findOne({ where: { email } });
+    if (!user) return res.status(400).json({ success: false, message: 'User not found' });
+
+    // Check the code
+    if (user.otp !== otp) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP code' });
     }
 
-    // Encrypt password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    // Success! Unlock the account
+    await user.update({ isVerified: true, otp: null });
 
-    // Create User
-    const newUser = await User.create({
-      username,
-      email,
-      password: hashedPassword, // Matches your model field
-      role: role || 'pharmacist'
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'User registered successfully!',
-      user: { id: newUser.id, username: newUser.username, email: newUser.email }
-    });
+    res.status(200).json({ success: true, message: 'Account Verified! You can now log in.' });
 
   } catch (error) {
-    console.error("Register Error:", error);
-    res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+    res.status(500).json({ message: 'Server Error', error: error.message });
   }
 };
 
-// ------------------------------------------
 // 2. LOGIN USER
-// ------------------------------------------
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // 1. Find user by email
+    // A. Find user
     const user = await User.findOne({ where: { email } });
     if (!user) {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
-    // 2. Check if user is active (Optional, based on your model)
+    // B. Check Verified Status 
+    if (!user.isVerified) {
+        return res.status(403).json({ success: false, message: "Please verify your email first." });
+    }
+
+    // C. Check Active Status
     if (user.isActive === false) {
       return res.status(403).json({ success: false, message: "Account is disabled" });
     }
 
-    // 3. Compare Passwords
+    // D. Compare Passwords
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
-    // 4. Update Last Login Date
+    // E. Update Last Login
     await user.update({ lastLogin: new Date() });
 
-    // 5. Generate Token (The "ID Card")
+    // F. Generate Token
     const token = jwt.sign(
       { id: user.id, role: user.role },
-      process.env.JWT_SECRET || 'secret_key_fallback', // Safety fallback
+      process.env.JWT_SECRET || 'secret_key_fallback',
       { expiresIn: '1d' }
     );
 
@@ -82,12 +73,25 @@ exports.login = async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        pharmacyName: user.pharmacyName
       }
     });
 
   } catch (error) {
     console.error("Login Error:", error);
     res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+  }
+};
+
+// 3. GET PROFILE
+exports.getProfile = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['password', 'otp'] } 
+    });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error' });
   }
 };
