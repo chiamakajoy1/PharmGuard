@@ -5,7 +5,7 @@ const auditController = require('../controllers/auditController');
 const authMiddleware = require('../middleware/authMiddleware'); // Checks Login
 const roleMiddleware = require('../middleware/roleMiddleware'); // Checks Role
 
-// 🔒 GLOBAL GATEKEEPER: All routes below require login + ADMIN role
+// GLOBAL GATEKEEPER: All routes below require login + ADMIN role
 router.use(authMiddleware);
 router.use(roleMiddleware(['admin'])); 
 
